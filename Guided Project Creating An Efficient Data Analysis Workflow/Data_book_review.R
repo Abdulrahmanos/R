@@ -1,0 +1,141 @@
+
+#calling the reader library 
+#there are 2 ways to load a data. 1- from import. 2- from switching the directory and loading the data using read library.
+library(readr)
+bookreviews_df <- read_csv('book_reviews.csv')
+view(bookreviews_df)
+dim(bookreviews_df)
+#loading library tidyverse
+library(tidyverse)
+glimpse(bookreviews_df)
+#The data consists of 4 columns and 2000 rows. 
+#The attributes of the data are Name, review, and price of the book. Also, the state
+#Name, review, and the satae are in characters. while price is numeric 
+columns_df <- colnames(bookreviews_df)
+view(columns_df)
+#finding the types of each column
+col_tpyes <- c()
+for (type in colnames(bookreviews_df)) {
+  col_tpyes <- c(col_tpyes, typeof(bookreviews_df[[type]]))
+}
+view(col_tpyes)
+
+# What are the unique values are present in each of the columns?
+unique_list <- list()
+for (uq in 1:length(colnames(bookreviews_df))){
+  unique_list[uq] <- (unique(bookreviews_df[uq]))
+}
+print(unique_list)
+#finding the null values
+for (i in colnames(bookreviews_df)){
+  print(sum(is.na(bookreviews_df[[i]])))
+}
+#The first issue we will contend with is the issue of missing data
+#finding the null values
+null_list <- vector(mode = "logical", length = ncol(bookreviews_df))
+names(null_list) <- colnames(bookreviews_df)
+for (null in seq_along(bookreviews_df)) {sum(is.na((bookreviews_df[[null]]))) %>% print}
+
+#Subset Data with null values 
+reviews_meta <- bookreviews_df %>% 
+  rowid_to_column(var = "id") %>% 
+  mutate(is_complete = rowSums(is.na(.)) == 0)
+reviews_meta
+view(reviews_meta)
+install.packages("janitor")
+library(janitor)
+#The new dataset has 206 rows less
+reviews_meta %>% tabyl(is_complete)
+reviews_meta %>% 
+  
+#Is there any book with exceptionally high percentage of missings? –No
+tabyl(book, is_complete) %>% 
+adorn_percentages() %>% 
+adorn_rounding(2) %>% 
+adorn_title() 
+
+#Is there any state with exceptionally high percentage of missings? –No
+reviews_meta %>% 
+  select(-review) %>% 
+  dplyr::mutate_if(is.numeric, as.character) %>% 
+  pivot_longer(-c(id, is_complete)) %>% 
+  tabyl(value, is_complete, name, show_missing_levels = FALSE) %>% 
+  adorn_percentages() %>% 
+  adorn_rounding(2) %>% 
+  adorn_title() %>% 
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width = F, font_size = 14, position = "left")
+#the labeling for each state is inconsistent. For example, California is written as both "California" and "CA". Both "California" and "CA" refer to the same place in the United States, so we should try to clean this up
+#creating state_name and state_code columns
+reviews_meta <- reviews_meta %>% mutate(
+  state_name = case_when(
+    state == "Texas" ~ "Texas",
+    state == "TX" ~ "Texas",
+    state == "New York" ~ "New York",
+    state == "NY" ~ "New York",
+    state == "Florida" ~ "Florida",
+    state == "FL" ~ "Florida",
+    state == "California" ~ "California",
+    state == "CA" ~ "California"
+  ),
+  state_code = case_when(
+    state == "Texas" ~ "TX",
+    state == "TX" ~ "TX",
+    state == "New York" ~ "NY",
+    state == "NY" ~ "NY",
+    state == "Florida" ~ "FL",
+    state == "FL" ~ "FL",
+    state == "California" ~ "CA",
+    state == "CA" ~ "CA"
+  )
+)
+reviews_meta <- reviews_meta %>% select(-state)
+view(reviews_meta)
+
+#Now that we have fixed the inconsistent values that were in the state column, the next thing to do is to convert the text in the review column to number to make it much easier to work with. To do this, we are going to create a new column review_num where we will be replacing “Poor” with 1, “Fair” with 2, “Good” with 3, “Great” with 4, and “Excellent” with 5. We are also going to be creating a column is_high_rating where ratings 4 or greater than 4 will be TRUE and the rest FALSE
+reviews_meta <- reviews_meta %>% mutate(
+  review_num = case_when(
+    review == "Poor" ~ 1,
+    review == "Fair" ~ 2,
+    review == "Good" ~ 3,
+    review == "Great" ~ 4,
+    review == "Excellent" ~ 5
+  )
+)
+
+reviews_meta <- reviews_meta %>% mutate(
+  is_high_review = if_else(review_num > 3, TRUE, FALSE)
+)
+
+#Which Is The Most Profitable Book? First we will look at profitability with respect to revenue generated and then we will look at profitability with respect to sales. We are also going
+# grouping and aggregating the data
+install.packages("kableExtra")
+library(kableExtra)
+revenue_summary_with_no_null2 <- reviews_meta %>% group_by(book) %>% summarise(
+  sales = n(),
+  sales_perc = round(sales / nrow(reviews_meta), 3),
+  revenue = sum(price),
+  average_review = round(mean(review_num, na.rm = TRUE), 2),
+  price = revenue / sales,
+  high_review_perc = round(
+    (sum(is_high_review, na.rm = TRUE) / sales), 2)
+) %>% arrange(-revenue)
+revenue_summary_with_no_null2 %>% kbl(booktabs = T)
+revenue_summary_with_no_null2
+
+#How Well Does Each Book Peform Across The Various States? Now that we know how well each book performs in general. We want to see how they fair in each states
+state_revenue_summary <- reviews_meta %>% group_by(book, state_name) %>% summarise(
+  sales = n(),
+  sales_perc = round(sales / nrow(reviews_meta), 3),
+  revenue = sum(price),
+  average_review = round(mean(review_num, na.rm = TRUE), 2),
+  price = revenue / sales,
+  high_review_perc = round(
+    (sum(is_high_review, na.rm = TRUE) / sales), 2),
+  .groups = "drop"
+) %>% arrange(-revenue, -sales)
+state_revenue_summary %>% kbl(booktabs = T)
+#When we look at the revenue for each of the individual states, the book Secrets Of R For Advanced Students generated the most revenue.
+
+#In summary we found that while “Secrets Of R For Advanced Students” is the book that generates the highest profits overall and in each state, there are some reasons to believe that overall, the book “Fundamentals of R For Beginners” can be seen as the most profitable book because it generated profits but also ranked high in terms of the amount of copies sold and customer satisfaction.
